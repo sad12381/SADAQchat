@@ -1207,38 +1207,7 @@
                         users[username].burnConfirmed = false;
                         updateUserInFirebase(username, users[username]);
                     }
-                    // Logout all users
-async function logoutAllUsers() {
-    // Clear all user data from Firebase
-    Object.keys(users).forEach(username => {
-        db.collection('users').doc(username).delete();
-    });
-    
-    // Reset state
-    isLoggedIn = false;
-    currentUser = '';
-    
-    // Unsubscribe from Firebase listeners
-    if (unsubscribeMessages) unsubscribeMessages();
-    if (unsubscribeUsers) unsubscribeUsers();
-    if (unsubscribeBurnStatus) unsubscribeBurnStatus();
-    
-    // Show login screen
-    loginSection.style.display = 'block';
-    usersSidebar.style.display = 'none';
-    chatContainer.style.display = 'none';
-    burnButton.style.display = 'none';
-    
-    // Clear input fields
-    usernameInput.value = '';
-    passwordInput.value = '';
-    
-    // Show logout message
-    showStatus('CHAT BURNED. ALL USERS LOGGED OUT.', 'granted');
-    
-    // Add this line to refresh the page after a short delay
-    setTimeout(() => { location.reload(); }, 2000);
-}
+                    
                 });
                 
                 // Add system message about chat being burned
@@ -1291,6 +1260,11 @@ async function logoutAllUsers() {
                 
                 // Show logout message
                 showStatus('CHAT BURNED. ALL USERS LOGGED OUT.', 'granted');
+                // Show logout message
+    
+    // Add this line to refresh the page after a short delay
+    setTimeout(() => { location.reload(); }, 2000);
+
             }
             
             // Update function that runs periodically
