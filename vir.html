@@ -256,7 +256,6 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            position: relative;
         }
         
         .online-dot {
@@ -329,7 +328,6 @@
         .input-wrapper {
             display: flex;
             gap: 10px;
-            position: relative;
         }
         
         .chat-input {
@@ -501,6 +499,20 @@
                 padding: 5px 10px;
             }
         }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,0,106,0.3);
+            border-radius: 50%;
+            border-top-color: #ff006a;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -583,6 +595,12 @@
     </div>
 
     <script>
+        // Configuration - Update these with your GitHub information
+        const GITHUB_USERNAME = 'sad12381';
+        const GITHUB_REPO = 'SADAQchat';
+        const GITHUB_TOKEN = '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'; // Create a personal access token
+        const DATA_FILE = 'chat_data.json';
+        
         document.addEventListener('DOMContentLoaded', function() {
             // Create matrix background effect
             const matrixBg = document.getElementById('matrix-bg');
@@ -671,58 +689,129 @@
             let burnRequested = false;
             let burnConfirmed = false;
             
-            // Initialize data
-            function initializeData() {
-                // Load messages from localStorage
-                const storedMessages = localStorage.getItem('private_chat_messages');
-                if (storedMessages) {
-                    messages = JSON.parse(storedMessages);
+            // GitHub API functions
+            async function loadDataFromGitHub() {
+                try {
+                    statusText.innerHTML = 'Loading data from GitHub <span class="loading"></span>';
                     
-                    // Filter out expired messages
-                    const now = Date.now();
-                    messages = messages.filter(msg => now - msg.timestamp < MESSAGE_LIFETIME);
-                }
-                
-                // Load users from localStorage
-                const storedUsers = localStorage.getItem('private_chat_users');
-                if (storedUsers) {
-                    users = JSON.parse(storedUsers);
-                    
-                    // Remove users who haven't been active recently
-                    const now = Date.now();
-                    Object.keys(users).forEach(username => {
-                        if (now - users[username].lastSeen > USER_TIMEOUT) {
-                            delete users[username];
+                    const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
+                        headers: {
+                            'Authorization': `token ${GITHUB_TOKEN}`,
+                            'Accept': 'application/vnd.github.v3+json'
                         }
                     });
                     
-                    // Save the updated users list
-                    saveUsers();
+                    if (response.status === 404) {
+                        // File doesn't exist yet, create it
+                        return {messages: [], users: {}, burnStatus: {requested: false, confirmed: false}};
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to load data from GitHub');
+                    }
+                    
+                    const data = await response.json();
+                    const content = atob(data.content);
+                    return JSON.parse(content);
+                } catch (error) {
+                    console.error('Error loading data from GitHub:', error);
+                    showStatus('ERROR: Could not load data from GitHub', 'denied');
+                    return {messages: [], users: {}, burnStatus: {requested: false, confirmed: false}};
+                }
+            }
+            
+            async function saveDataToGitHub() {
+                try {
+                    // Get the current SHA of the file to update it
+                    let sha = null;
+                    try {
+                        const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
+                            headers: {
+                                'Authorization': `token ${GITHUB_TOKEN}`,
+                                'Accept': 'application/vnd.github.v3+json'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            sha = data.sha;
+                        }
+                    } catch (e) {
+                        // File doesn't exist yet, that's okay
+                    }
+                    
+                    const dataToSave = {
+                        messages: messages.filter(msg => Date.now() - msg.timestamp < MESSAGE_LIFETIME),
+                        users: users,
+                        burnStatus: {
+                            requested: burnRequested,
+                            confirmed: burnConfirmed,
+                            requestedBy: burnRequested ? currentUser : null,
+                            targetUser: burnRequested ? getOtherUser() : null
+                        }
+                    };
+                    
+                    const content = btoa(JSON.stringify(dataToSave));
+                    
+                    const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${GITHUB_TOKEN}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            message: 'Update chat data',
+                            content: content,
+                            sha: sha
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to save data to GitHub');
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Error saving data to GitHub:', error);
+                    showStatus('ERROR: Could not save data to GitHub', 'denied');
+                    return false;
+                }
+            }
+            
+            // Initialize data
+            async function initializeData() {
+                const data = await loadDataFromGitHub();
+                
+                messages = data.messages || [];
+                users = data.users || {};
+                burnRequested = data.burnStatus?.requested || false;
+                burnConfirmed = data.burnStatus?.confirmed || false;
+                
+                // Remove users who haven't been active recently
+                const now = Date.now();
+                Object.keys(users).forEach(username => {
+                    if (now - users[username].lastSeen > USER_TIMEOUT) {
+                        delete users[username];
+                    }
+                });
+                
+                // If both users confirmed burn, clear the chat and logout
+                if (burnRequested && burnConfirmed) {
+                    clearChatAndLogout();
+                    return;
                 }
                 
-                // Load burn status
-                const storedBurnStatus = localStorage.getItem('private_chat_burn');
-                if (storedBurnStatus) {
-                    const burnData = JSON.parse(storedBurnStatus);
-                    burnRequested = burnData.requested || false;
-                    burnConfirmed = burnData.confirmed || false;
-                    
-                    // If both users confirmed burn, clear the chat and logout
-                    if (burnData.requested && burnData.confirmed) {
-                        clearChatAndLogout();
-                    }
-                    // If one user requested burn but not confirmed yet, show notification to the other user
-                    else if (burnData.requested && !burnData.confirmed && isLoggedIn) {
-                        // Only show notification if the current user is the target
-                        if (burnData.targetUser === currentUser) {
-                            showBurnNotification(burnData.requestedBy);
-                        }
+                // If one user requested burn but not confirmed yet, show notification to the other user
+                if (burnRequested && !burnConfirmed && isLoggedIn) {
+                    if (data.burnStatus.targetUser === currentUser) {
+                        showBurnNotification(data.burnStatus.requestedBy);
                     }
                 }
             }
             
             // Login function
-            function login() {
+            async function login() {
                 const username = usernameInput.value.trim();
                 const password = passwordInput.value.trim();
                 
@@ -750,14 +839,14 @@
                         burnConfirmed: false
                     };
                     
-                    // Save users to localStorage
-                    saveUsers();
+                    // Save users to GitHub
+                    await saveDataToGitHub();
                     
                     // Show access granted
                     showStatus('ACCESS GRANTED. INITIATING PRIVATE CHANNEL...', 'granted');
                     
                     // After a delay, show the chat interface
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         loginSection.style.display = 'none';
                         usersSidebar.style.display = 'flex';
                         chatContainer.style.display = 'flex';
@@ -797,27 +886,7 @@
                 } else {
                     statusMessage.classList.add('access-denied');
                 }
-                statusText.textContent = message;
-            }
-            
-            // Save messages to localStorage
-            function saveMessages() {
-                localStorage.setItem('private_chat_messages', JSON.stringify(messages));
-            }
-            
-            // Save users to localStorage
-            function saveUsers() {
-                localStorage.setItem('private_chat_users', JSON.stringify(users));
-            }
-            
-            // Save burn status to localStorage
-            function saveBurnStatus() {
-                localStorage.setItem('private_chat_burn', JSON.stringify({
-                    requested: burnRequested,
-                    confirmed: burnConfirmed,
-                    requestedBy: burnRequested ? currentUser : null,
-                    targetUser: burnRequested ? getOtherUser() : null
-                }));
+                statusText.innerHTML = message;
             }
             
             // Get the other user
@@ -898,7 +967,7 @@
             }
             
             // Send a new message
-            function sendMessage() {
+            async function sendMessage() {
                 const text = messageInput.value.trim();
                 if (text) {
                     const timestamp = Date.now();
@@ -909,21 +978,21 @@
                     };
                     
                     messages.push(message);
-                    saveMessages();
+                    await saveDataToGitHub();
                     addMessageToChat(currentUser, text, timestamp, true, userColors[currentUser]);
                     messageInput.value = '';
                     
                     // Update user's last seen time
                     users[currentUser].lastSeen = Date.now();
-                    saveUsers();
+                    await saveDataToGitHub();
                     renderUsersList();
                 }
             }
             
             // Request to burn the chat
-            function requestBurn() {
+            async function requestBurn() {
                 burnRequested = true;
-                saveBurnStatus();
+                await saveDataToGitHub();
                 
                 // Add system message about burn request
                 const timestamp = Date.now();
@@ -934,7 +1003,7 @@
                 };
                 
                 messages.push(message);
-                saveMessages();
+                await saveDataToGitHub();
                 addMessageToChat('System', message.text, timestamp, false, '#ff006a');
                 
                 // Update UI
@@ -949,11 +1018,10 @@
             }
             
             // Confirm burn
-            function confirmBurn() {
+            async function confirmBurn() {
                 burnConfirmed = true;
                 users[currentUser].burnConfirmed = true;
-                saveUsers();
-                saveBurnStatus();
+                await saveDataToGitHub();
                 
                 // Check if both users have confirmed
                 let allConfirmed = true;
@@ -975,7 +1043,7 @@
                     };
                     
                     messages.push(message);
-                    saveMessages();
+                    await saveDataToGitHub();
                     addMessageToChat('System', message.text, timestamp, false, '#ff006a');
                     
                     // Update UI
@@ -986,15 +1054,13 @@
             }
             
             // Clear the chat and logout all users
-            function clearChatAndLogout() {
+            async function clearChatAndLogout() {
                 // Clear messages
                 messages = [];
-                saveMessages();
                 
                 // Clear burn status
                 burnRequested = false;
                 burnConfirmed = false;
-                saveBurnStatus();
                 
                 // Reset user burn status
                 Object.keys(users).forEach(username => {
@@ -1002,7 +1068,9 @@
                         users[username].burnConfirmed = false;
                     }
                 });
-                saveUsers();
+                
+                // Save cleared data to GitHub
+                await saveDataToGitHub();
                 
                 // Add system message about chat being burned
                 const timestamp = Date.now();
@@ -1013,7 +1081,7 @@
                 };
                 
                 messages.push(message);
-                saveMessages();
+                await saveDataToGitHub();
                 renderMessages();
                 
                 // Update UI
@@ -1028,10 +1096,10 @@
             }
             
             // Logout all users
-            function logoutAllUsers() {
+            async function logoutAllUsers() {
                 // Clear all user data
                 users = {};
-                saveUsers();
+                await saveDataToGitHub();
                 
                 // Reset state
                 isLoggedIn = false;
@@ -1052,68 +1120,45 @@
             }
             
             // Update function that runs periodically
-            function updateChatData() {
+            async function updateChatData() {
                 if (!isLoggedIn) return;
                 
                 // Update current user's last seen
                 users[currentUser].lastSeen = Date.now();
-                saveUsers();
+                await saveDataToGitHub();
                 
-                // Load the latest messages and users
-                const storedMessages = localStorage.getItem('private_chat_messages');
-                if (storedMessages) {
-                    const newMessages = JSON.parse(storedMessages);
-                    
-                    // Filter out expired messages
-                    const now = Date.now();
-                    const filteredMessages = newMessages.filter(msg => now - msg.timestamp < MESSAGE_LIFETIME);
-                    
-                    // Only update if messages have changed
-                    if (JSON.stringify(filteredMessages) !== JSON.stringify(messages)) {
-                        messages = filteredMessages;
-                        renderMessages();
-                    }
+                // Load the latest data from GitHub
+                const data = await loadDataFromGitHub();
+                
+                // Update messages if they've changed
+                if (JSON.stringify(data.messages) !== JSON.stringify(messages)) {
+                    messages = data.messages;
+                    renderMessages();
                 }
                 
-                const storedUsers = localStorage.getItem('private_chat_users');
-                if (storedUsers) {
-                    const newUsers = JSON.parse(storedUsers);
-                    
-                    // Remove users who haven't been active recently
-                    const now = Date.now();
-                    Object.keys(newUsers).forEach(username => {
-                        if (now - newUsers[username].lastSeen > USER_TIMEOUT) {
-                            delete newUsers[username];
-                        }
-                    });
-                    
-                    // Only update if users have changed
-                    if (JSON.stringify(newUsers) !== JSON.stringify(users)) {
-                        users = newUsers;
-                        renderUsersList();
-                    }
+                // Update users if they've changed
+                if (JSON.stringify(data.users) !== JSON.stringify(users)) {
+                    users = data.users;
+                    renderUsersList();
                 }
                 
                 // Check for burn requests
-                const storedBurnStatus = localStorage.getItem('private_chat_burn');
-                if (storedBurnStatus) {
-                    const burnData = JSON.parse(storedBurnStatus);
-                    
+                if (data.burnStatus) {
                     // If burn was requested and current user is the target, show notification
-                    if (burnData.requested && !burnData.confirmed && 
+                    if (data.burnStatus.requested && !data.burnStatus.confirmed && 
                         users[currentUser] && !users[currentUser].burnConfirmed &&
-                        burnData.targetUser === currentUser &&
+                        data.burnStatus.targetUser === currentUser &&
                         !burnNotification.style.display) {
-                        showBurnNotification(burnData.requestedBy);
+                        showBurnNotification(data.burnStatus.requestedBy);
                     }
                     
                     // If burn was confirmed by both users, clear the chat and logout
-                    if (burnData.requested && burnData.confirmed) {
+                    if (data.burnStatus.requested && data.burnStatus.confirmed) {
                         clearChatAndLogout();
                     }
                     
                     // If burn was requested but not by current user, update button
-                    if (burnData.requested && !burnData.confirmed && burnData.requestedBy === currentUser) {
+                    if (data.burnStatus.requested && !data.burnStatus.confirmed && data.burnStatus.requestedBy === currentUser) {
                         burnButton.textContent = 'Waiting...';
                         burnButton.disabled = true;
                     }
@@ -1123,7 +1168,7 @@
             // Start the update interval
             function startUpdateInterval() {
                 if (updateInterval) clearInterval(updateInterval);
-                updateInterval = setInterval(updateChatData, 1000); // Update every second
+                updateInterval = setInterval(updateChatData, 2000); // Update every 2 seconds
             }
             
             // Event listeners
@@ -1170,22 +1215,6 @@
             
             passwordInput.addEventListener('blur', function() {
                 this.classList.remove('blink');
-            });
-            
-            // Handle page visibility change
-            document.addEventListener('visibilitychange', function() {
-                if (document.hidden) {
-                    // Page is hidden, user is not active
-                    if (isLoggedIn && users[currentUser]) {
-                        users[currentUser].lastSeen = Date.now() - USER_TIMEOUT - 1000;
-                        saveUsers();
-                    }
-                } else if (isLoggedIn && users[currentUser]) {
-                    // Page is visible again, user is active
-                    users[currentUser].lastSeen = Date.now();
-                    saveUsers();
-                    renderUsersList();
-                }
             });
         });
     </script>
