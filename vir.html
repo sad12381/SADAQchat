@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure System // Private Channel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+        
+        body {
+            background-color: #0a0a0a;
+            color: #c0c0c0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        .matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 900px;
+            height: 90vh;
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .header {
+            background-color: #000;
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #222;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .header::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #ff2d75, #ff006a);
+            box-shadow: 0 0 10px rgba(255, 0, 106, 0.5);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #ccc;
+        }
+        
+        .terminal-line {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+        
+        .login-container {
+            padding: 30px;
+            flex-shrink: 0;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+        
+        .input-field {
+            width: 100%;
+            padding: 12px 15px;
+            background-color: #111;
+            border: 1px solid #222;
+            border-radius: 3px;
+            color: #c0c0c0;
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+        
+        .input-field:focus {
+            border-color: #ff006a;
+            box-shadow: 0 0 10px rgba(255, 0, 106, 0.3);
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 12px 15px;
+            background-color: #000;
+            color: #c0c0c0;
+            border: 1px solid #222;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .login-btn:hover {
+            background-color: #ff006a;
+            color: #000;
+            border-color: #ff006a;
+        }
+        
+        .status-message {
+            margin-top: 20px;
+            padding: 10px;
+            text-align: center;
+            font-size: 0.9rem;
+            border-radius: 3px;
+            display: none;
+        }
+        
+        .access-granted {
+            background-color: rgba(0, 100, 0, 0.2);
+            color: #0f0;
+            border: 1px solid #0f0;
+            display: block;
+        }
+        
+        .access-denied {
+            background-color: rgba(100, 0, 0, 0.2);
+            color: #f00;
+            border: 1px solid #f00;
+            display: block;
+        }
+        
+        .chat-layout {
+            display: flex;
+            flex-direction: row;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .users-sidebar {
+            width: 200px;
+            background-color: #0c0c0c;
+            border-right: 1px solid #222;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        
+        .users-header {
+            padding: 15px;
+            background-color: #000;
+            border-bottom: 1px solid #222;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #ff006a;
+            flex-shrink: 0;
+        }
+        
+        .users-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .user-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-radius: 3px;
+            transition: background-color 0.3s;
+        }
+        
+        .user-item:hover {
+            background-color: #151515;
+        }
+        
+        .user-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        
+        .user-name {
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .user-status {
+            margin-left: auto;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #888;
+            flex-shrink: 0;
+        }
+        
+        .chat-container {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .chat-header {
+            background-color: #000;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        }
+        
+        .online-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+        }
+        
+        .online-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #ff006a;
+            border-radius: 50%;
+            box-shadow: 0 0 5px #ff006a;
+        }
+        
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background-color: #0a0a0a;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 12px 15px;
+            border-radius: 5px;
+            line-height: 1.4;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .message-incoming {
+            background-color: #111;
+            align-self: flex-start;
+            border-left: 2px solid;
+        }
+        
+        .message-outgoing {
+            background-color: #1a1a1a;
+            align-self: flex-end;
+            border-right: 2px solid #007acc;
+        }
+        
+        .message-sender {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        
+        .message-time {
+            font-size: 0.7rem;
+            text-align: right;
+            margin-top: 5px;
+            color: #555;
+        }
+        
+        .chat-input-container {
+            padding: 15px;
+            background-color: #000;
+            border-top: 1px solid #222;
+            flex-shrink: 0;
+        }
+        
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            position: relative;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 12px 15px;
+            background-color: #111;
+            border: 1px solid #222;
+            border-radius: 3px;
+            outline: none;
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            color: #c0c0c0;
+        }
+        
+        .chat-input:focus {
+            border-color: #ff006a;
+            box-shadow: 0 0 10px rgba(255, 0, 106, 0.3);
+        }
+        
+        .send-button {
+            background-color: #000;
+            color: #c0c0c0;
+            border: 1px solid #222;
+            border-radius: 3px;
+            padding: 0 20px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+        }
+        
+        .send-button:hover {
+            background-color: #ff006a;
+            color: #000;
+            border-color: #ff006a;
+        }
+        
+        .burn-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ff2d75, #ff006a);
+            color: #000;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(255, 0, 106, 0.7);
+            display: none;
+            z-index: 100;
+            font-weight: bold;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        
+        .burn-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(255, 0, 106, 0.9);
+        }
+        
+        .burn-notification {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 2px solid #ff006a;
+            border-radius: 5px;
+            padding: 15px;
+            color: #ff006a;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 0 20px rgba(255, 0, 106, 0.5);
+            width: 300px;
+        }
+        
+        .burn-confirm {
+            margin-top: 10px;
+            padding: 8px 15px;
+            background-color: #ff006a;
+            color: #000;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .scanline {
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #ff006a, transparent);
+            position: absolute;
+            top: 0;
+            left: 0;
+            animation: scan 3s linear infinite;
+            opacity: 0.5;
+        }
+        
+        .blink {
+            animation: blink 1s step-start infinite;
+        }
+        
+        .glitch-text {
+            position: relative;
+            display: inline-block;
+        }
+        
+        /* Animations */
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .container {
+                height: 100vh;
+                border-radius: 0;
+            }
+            
+            .users-sidebar {
+                width: 160px;
+            }
+            
+            .message {
+                max-width: 90%;
+            }
+            
+            .burn-button {
+                top: 5px;
+                right: 5px;
+                width: 50px;
+                height: 50px;
+                font-size: 0.7rem;
+            }
+        }
+        
+        @media (max-width: 600px) {
+            .chat-layout {
+                flex-direction: column;
+            }
+            
+            .users-sidebar {
+                width: 100%;
+                height: 120px;
+                border-right: none;
+                border-bottom: 1px solid #222;
+            }
+            
+            .users-header {
+                padding: 10px;
+            }
+            
+            .users-list {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 5px;
+                padding: 10px;
+            }
+            
+            .user-item {
+                margin-bottom: 0;
+                padding: 5px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="matrix-bg" id="matrix-bg"></div>
+    
+    <div class="container">
+        <div class="scanline"></div>
+        <div class="header">
+            <h1 class="glitch-text" data-text="Secure System // Private Channel">Secure System // Private Channel</h1>
+        </div>
+        
+        <div id="login-section">
+            <div class="login-container">
+                <span class="terminal-line">> Initializing private channel protocol...</span>
+                <span class="terminal-line">> Connection established. Authentication required.</span>
+                <span class="terminal-line">> Enter credentials to proceed:</span>
+                
+                <div class="input-group">
+                    <label for="username-input">USER ID:</label>
+                    <input type="text" id="username-input" class="input-field" placeholder="Enter your identifier">
+                </div>
+                
+                <div class="input-group">
+                    <label for="password-input">ACCESS CODE:</label>
+                    <input type="password" id="password-input" class="input-field" placeholder="Enter secure passkey">
+                </div>
+                
+                <button id="login-btn" class="login-btn">Initiate Connection</button>
+                
+                <div id="status-message" class="status-message">
+                    <span>> </span><span id="status-text">System ready</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="chat-section" class="chat-layout">
+            <div class="users-sidebar" id="users-sidebar">
+                <div class="users-header">
+                    Private Users
+                </div>
+                <div class="users-list" id="users-list">
+                    <!-- Users will be added here dynamically -->
+                </div>
+            </div>
+            
+            <div class="chat-container" id="chat-container">
+                <div class="chat-header">
+                    <h2>Private Channel // Active</h2>
+                    <div class="online-indicator">
+                        <div class="online-dot"></div>
+                        <span id="online-status">ENCRYPTED</span>
+                    </div>
+                </div>
+                
+                <div class="chat-area">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="message message-incoming">
+                            <div class="message-sender">System</div>
+                            <div class="message-text">Secure private channel established. You may begin communication.</div>
+                            <div class="message-time">23:59:45</div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="input-wrapper">
+                            <input type="text" id="message-input" class="chat-input" placeholder="Type encrypted message...">
+                            <button id="send-button" class="send-button">Transmit</button>
+                        </div>
+                    </div>
+                    
+                    <button id="burn-button" class="burn-button">BURN</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="burn-notification" class="burn-notification">
+        <div id="burn-notification-text">Other user requested to burn the chat</div>
+        <button id="burn-confirm" class="burn-confirm">Confirm Burn</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Create matrix background effect
+            const matrixBg = document.getElementById('matrix-bg');
+            const canvas = document.createElement('canvas');
+            matrixBg.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+            
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+            
+            // Matrix code effect
+            const letters = '01010101010101010101010101010101';
+            const fontSize = 12;
+            const columns = canvas.width / fontSize;
+            const drops = [];
+            
+            for (let i = 0; i < columns; i++) {
+                drops[i] = 1;
+            }
+            
+            function drawMatrix() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#ff006a';
+                ctx.font = `${fontSize}px monospace`;
+                
+                for (let i = 0; i < drops.length; i++) {
+                    const text = letters[Math.floor(Math.random() * letters.length)];
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                    
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    
+                    drops[i]++;
+                }
+            }
+            
+            setInterval(drawMatrix, 33);
+            
+            // Elements
+            const loginSection = document.getElementById('login-section');
+            const usernameInput = document.getElementById('username-input');
+            const passwordInput = document.getElementById('password-input');
+            const loginBtn = document.getElementById('login-btn');
+            const statusMessage = document.getElementById('status-message');
+            const statusText = document.getElementById('status-text');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const chatMessages = document.getElementById('chat-messages');
+            const usersList = document.getElementById('users-list');
+            const usersSidebar = document.getElementById('users-sidebar');
+            const chatContainer = document.getElementById('chat-container');
+            const burnButton = document.getElementById('burn-button');
+            const burnNotification = document.getElementById('burn-notification');
+            const burnNotificationText = document.getElementById('burn-notification-text');
+            const burnConfirm = document.getElementById('burn-confirm');
+            
+            // Configuration - Fixed credentials for two users
+            const USER_CREDENTIALS = {
+                'user1': 'pass1',  // Change these to your preferred credentials
+                'user2': 'pass2'   // Change these to your preferred credentials
+            };
+            
+            const MESSAGE_LIFETIME = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
+            const USER_TIMEOUT = 30 * 1000; // 30 seconds until user is considered offline
+            
+            // User colors
+            const userColors = {
+                'user1': '#ff006a', // Pink
+                'user2': '#007acc'  // Blue
+            };
+            
+            // State
+            let currentUser = '';
+            let isLoggedIn = false;
+            let messages = [];
+            let users = {};
+            let updateInterval;
+            let burnRequested = false;
+            let burnConfirmed = false;
+            
+            // Initialize data
+            function initializeData() {
+                // Load messages from localStorage
+                const storedMessages = localStorage.getItem('private_chat_messages');
+                if (storedMessages) {
+                    messages = JSON.parse(storedMessages);
+                    
+                    // Filter out expired messages
+                    const now = Date.now();
+                    messages = messages.filter(msg => now - msg.timestamp < MESSAGE_LIFETIME);
+                }
+                
+                // Load users from localStorage
+                const storedUsers = localStorage.getItem('private_chat_users');
+                if (storedUsers) {
+                    users = JSON.parse(storedUsers);
+                    
+                    // Remove users who haven't been active recently
+                    const now = Date.now();
+                    Object.keys(users).forEach(username => {
+                        if (now - users[username].lastSeen > USER_TIMEOUT) {
+                            delete users[username];
+                        }
+                    });
+                    
+                    // Save the updated users list
+                    saveUsers();
+                }
+                
+                // Load burn status
+                const storedBurnStatus = localStorage.getItem('private_chat_burn');
+                if (storedBurnStatus) {
+                    const burnData = JSON.parse(storedBurnStatus);
+                    burnRequested = burnData.requested || false;
+                    burnConfirmed = burnData.confirmed || false;
+                    
+                    // If both users confirmed burn, clear the chat and logout
+                    if (burnData.requested && burnData.confirmed) {
+                        clearChatAndLogout();
+                    }
+                    // If one user requested burn but not confirmed yet, show notification to the other user
+                    else if (burnData.requested && !burnData.confirmed && isLoggedIn) {
+                        // Only show notification if the current user is the target
+                        if (burnData.targetUser === currentUser) {
+                            showBurnNotification(burnData.requestedBy);
+                        }
+                    }
+                }
+            }
+            
+            // Login function
+            function login() {
+                const username = usernameInput.value.trim();
+                const password = passwordInput.value.trim();
+                
+                if (!username) {
+                    showStatus('Please enter your identifier', 'denied');
+                    return;
+                }
+                
+                // Check if username is valid (only user1 or user2)
+                if (!USER_CREDENTIALS.hasOwnProperty(username)) {
+                    showStatus('ACCESS DENIED. INVALID USER ID.', 'denied');
+                    return;
+                }
+                
+                // Check password
+                if (password === USER_CREDENTIALS[username]) {
+                    currentUser = username;
+                    isLoggedIn = true;
+                    
+                    // Add/update current user in users list
+                    users[currentUser] = {
+                        color: userColors[currentUser],
+                        lastSeen: Date.now(),
+                        online: true,
+                        burnConfirmed: false
+                    };
+                    
+                    // Save users to localStorage
+                    saveUsers();
+                    
+                    // Show access granted
+                    showStatus('ACCESS GRANTED. INITIATING PRIVATE CHANNEL...', 'granted');
+                    
+                    // After a delay, show the chat interface
+                    setTimeout(() => {
+                        loginSection.style.display = 'none';
+                        usersSidebar.style.display = 'flex';
+                        chatContainer.style.display = 'flex';
+                        burnButton.style.display = 'block';
+                        
+                        // Enable chat functionality
+                        messageInput.disabled = false;
+                        sendButton.disabled = false;
+                        
+                        // Focus on the message input
+                        messageInput.focus();
+                        
+                        // Render messages and users
+                        renderMessages();
+                        renderUsersList();
+                        
+                        // Start the update interval
+                        startUpdateInterval();
+                    }, 2000);
+                    
+                } else {
+                    showStatus('ACCESS DENIED. INVALID CREDENTIALS.', 'denied');
+                    
+                    // Shake animation for denied access
+                    loginSection.style.animation = 'shake 0.5s';
+                    setTimeout(() => {
+                        loginSection.style.animation = '';
+                    }, 500);
+                }
+            }
+            
+            // Show status message
+            function showStatus(message, type) {
+                statusMessage.className = 'status-message';
+                if (type === 'granted') {
+                    statusMessage.classList.add('access-granted');
+                } else {
+                    statusMessage.classList.add('access-denied');
+                }
+                statusText.textContent = message;
+            }
+            
+            // Save messages to localStorage
+            function saveMessages() {
+                localStorage.setItem('private_chat_messages', JSON.stringify(messages));
+            }
+            
+            // Save users to localStorage
+            function saveUsers() {
+                localStorage.setItem('private_chat_users', JSON.stringify(users));
+            }
+            
+            // Save burn status to localStorage
+            function saveBurnStatus() {
+                localStorage.setItem('private_chat_burn', JSON.stringify({
+                    requested: burnRequested,
+                    confirmed: burnConfirmed,
+                    requestedBy: burnRequested ? currentUser : null,
+                    targetUser: burnRequested ? getOtherUser() : null
+                }));
+            }
+            
+            // Get the other user
+            function getOtherUser() {
+                return currentUser === 'user1' ? 'user2' : 'user1';
+            }
+            
+            // Render all messages
+            function renderMessages() {
+                chatMessages.innerHTML = '';
+                
+                // Add system message if no messages exist
+                if (messages.length === 0) {
+                    const systemMessageEl = document.createElement('div');
+                    systemMessageEl.classList.add('message', 'message-incoming');
+                    systemMessageEl.innerHTML = `
+                        <div class="message-sender">System</div>
+                        <div class="message-text">Secure private channel established. You may begin communication.</div>
+                        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                    `;
+                    chatMessages.appendChild(systemMessageEl);
+                } else {
+                    // Render all messages
+                    messages.forEach(msg => {
+                        const isOwnMessage = msg.sender === currentUser;
+                        const userColor = users[msg.sender] ? users[msg.sender].color : '#c0c0c0';
+                        addMessageToChat(msg.sender, msg.text, msg.timestamp, isOwnMessage, userColor);
+                    });
+                }
+                
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Add a message to the chat UI
+            function addMessageToChat(sender, text, timestamp, isOwnMessage = false, color = '#c0c0c0') {
+                const messageEl = document.createElement('div');
+                messageEl.classList.add('message');
+                messageEl.classList.add(isOwnMessage ? 'message-outgoing' : 'message-incoming');
+                
+                if (!isOwnMessage) {
+                    messageEl.style.borderLeftColor = color;
+                }
+                
+                const messageTime = new Date(timestamp);
+                const timeString = messageTime.toLocaleTimeString();
+                
+                messageEl.innerHTML = `
+                    <div class="message-sender" style="color: ${color}">${sender}</div>
+                    <div class="message-text">${text}</div>
+                    <div class="message-time">${timeString}</div>
+                `;
+                
+                chatMessages.appendChild(messageEl);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Render users list
+            function renderUsersList() {
+                usersList.innerHTML = '';
+                
+                // Always show both users, with their online status
+                Object.keys(USER_CREDENTIALS).forEach(username => {
+                    const userItem = document.createElement('div');
+                    userItem.classList.add('user-item');
+                    
+                    const userColor = userColors[username];
+                    const isCurrentUser = username === currentUser;
+                    const isOnline = users[username] && (Date.now() - users[username].lastSeen) < USER_TIMEOUT;
+                    
+                    userItem.innerHTML = `
+                        <div class="user-color" style="background-color: ${userColor}"></div>
+                        <div class="user-name">${username}${isCurrentUser ? ' (You)' : ''}</div>
+                        <div class="user-status" style="background-color: ${isOnline ? '#0f0' : '#888'}"></div>
+                    `;
+                    
+                    usersList.appendChild(userItem);
+                });
+            }
+            
+            // Send a new message
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (text) {
+                    const timestamp = Date.now();
+                    const message = {
+                        sender: currentUser,
+                        text: text,
+                        timestamp: timestamp
+                    };
+                    
+                    messages.push(message);
+                    saveMessages();
+                    addMessageToChat(currentUser, text, timestamp, true, userColors[currentUser]);
+                    messageInput.value = '';
+                    
+                    // Update user's last seen time
+                    users[currentUser].lastSeen = Date.now();
+                    saveUsers();
+                    renderUsersList();
+                }
+            }
+            
+            // Request to burn the chat
+            function requestBurn() {
+                burnRequested = true;
+                saveBurnStatus();
+                
+                // Add system message about burn request
+                const timestamp = Date.now();
+                const message = {
+                    sender: 'System',
+                    text: `${currentUser} has requested to burn the chat. Waiting for ${getOtherUser()} to confirm...`,
+                    timestamp: timestamp
+                };
+                
+                messages.push(message);
+                saveMessages();
+                addMessageToChat('System', message.text, timestamp, false, '#ff006a');
+                
+                // Update UI
+                burnButton.textContent = 'Waiting...';
+                burnButton.disabled = true;
+            }
+            
+            // Show burn notification
+            function showBurnNotification(requestedBy) {
+                burnNotificationText.textContent = `${requestedBy} has requested to burn the chat`;
+                burnNotification.style.display = 'block';
+            }
+            
+            // Confirm burn
+            function confirmBurn() {
+                burnConfirmed = true;
+                users[currentUser].burnConfirmed = true;
+                saveUsers();
+                saveBurnStatus();
+                
+                // Check if both users have confirmed
+                let allConfirmed = true;
+                Object.keys(users).forEach(username => {
+                    if (!users[username].burnConfirmed) {
+                        allConfirmed = false;
+                    }
+                });
+                
+                if (allConfirmed) {
+                    clearChatAndLogout();
+                } else {
+                    // Add system message about burn confirmation
+                    const timestamp = Date.now();
+                    const message = {
+                        sender: 'System',
+                        text: `${currentUser} has confirmed the burn request. Waiting for other user...`,
+                        timestamp: timestamp
+                    };
+                    
+                    messages.push(message);
+                    saveMessages();
+                    addMessageToChat('System', message.text, timestamp, false, '#ff006a');
+                    
+                    // Update UI
+                    burnNotification.style.display = 'none';
+                    burnButton.textContent = 'Confirmed';
+                    burnButton.disabled = true;
+                }
+            }
+            
+            // Clear the chat and logout all users
+            function clearChatAndLogout() {
+                // Clear messages
+                messages = [];
+                saveMessages();
+                
+                // Clear burn status
+                burnRequested = false;
+                burnConfirmed = false;
+                saveBurnStatus();
+                
+                // Reset user burn status
+                Object.keys(users).forEach(username => {
+                    if (users[username]) {
+                        users[username].burnConfirmed = false;
+                    }
+                });
+                saveUsers();
+                
+                // Add system message about chat being burned
+                const timestamp = Date.now();
+                const message = {
+                    sender: 'System',
+                    text: 'Chat has been burned. All messages have been deleted. Logging out all users...',
+                    timestamp: timestamp
+                };
+                
+                messages.push(message);
+                saveMessages();
+                renderMessages();
+                
+                // Update UI
+                burnButton.textContent = 'BURN';
+                burnButton.disabled = false;
+                burnNotification.style.display = 'none';
+                
+                // Logout all users after a delay
+                setTimeout(() => {
+                    logoutAllUsers();
+                }, 3000);
+            }
+            
+            // Logout all users
+            function logoutAllUsers() {
+                // Clear all user data
+                users = {};
+                saveUsers();
+                
+                // Reset state
+                isLoggedIn = false;
+                currentUser = '';
+                
+                // Show login screen
+                loginSection.style.display = 'block';
+                usersSidebar.style.display = 'none';
+                chatContainer.style.display = 'none';
+                burnButton.style.display = 'none';
+                
+                // Clear input fields
+                usernameInput.value = '';
+                passwordInput.value = '';
+                
+                // Show logout message
+                showStatus('CHAT BURNED. ALL USERS LOGGED OUT.', 'granted');
+            }
+            
+            // Update function that runs periodically
+            function updateChatData() {
+                if (!isLoggedIn) return;
+                
+                // Update current user's last seen
+                users[currentUser].lastSeen = Date.now();
+                saveUsers();
+                
+                // Load the latest messages and users
+                const storedMessages = localStorage.getItem('private_chat_messages');
+                if (storedMessages) {
+                    const newMessages = JSON.parse(storedMessages);
+                    
+                    // Filter out expired messages
+                    const now = Date.now();
+                    const filteredMessages = newMessages.filter(msg => now - msg.timestamp < MESSAGE_LIFETIME);
+                    
+                    // Only update if messages have changed
+                    if (JSON.stringify(filteredMessages) !== JSON.stringify(messages)) {
+                        messages = filteredMessages;
+                        renderMessages();
+                    }
+                }
+                
+                const storedUsers = localStorage.getItem('private_chat_users');
+                if (storedUsers) {
+                    const newUsers = JSON.parse(storedUsers);
+                    
+                    // Remove users who haven't been active recently
+                    const now = Date.now();
+                    Object.keys(newUsers).forEach(username => {
+                        if (now - newUsers[username].lastSeen > USER_TIMEOUT) {
+                            delete newUsers[username];
+                        }
+                    });
+                    
+                    // Only update if users have changed
+                    if (JSON.stringify(newUsers) !== JSON.stringify(users)) {
+                        users = newUsers;
+                        renderUsersList();
+                    }
+                }
+                
+                // Check for burn requests
+                const storedBurnStatus = localStorage.getItem('private_chat_burn');
+                if (storedBurnStatus) {
+                    const burnData = JSON.parse(storedBurnStatus);
+                    
+                    // If burn was requested and current user is the target, show notification
+                    if (burnData.requested && !burnData.confirmed && 
+                        users[currentUser] && !users[currentUser].burnConfirmed &&
+                        burnData.targetUser === currentUser &&
+                        !burnNotification.style.display) {
+                        showBurnNotification(burnData.requestedBy);
+                    }
+                    
+                    // If burn was confirmed by both users, clear the chat and logout
+                    if (burnData.requested && burnData.confirmed) {
+                        clearChatAndLogout();
+                    }
+                    
+                    // If burn was requested but not by current user, update button
+                    if (burnData.requested && !burnData.confirmed && burnData.requestedBy === currentUser) {
+                        burnButton.textContent = 'Waiting...';
+                        burnButton.disabled = true;
+                    }
+                }
+            }
+            
+            // Start the update interval
+            function startUpdateInterval() {
+                if (updateInterval) clearInterval(updateInterval);
+                updateInterval = setInterval(updateChatData, 1000); // Update every second
+            }
+            
+            // Event listeners
+            loginBtn.addEventListener('click', login);
+            
+            passwordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+            
+            sendButton.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            burnButton.addEventListener('click', requestBurn);
+            
+            burnConfirm.addEventListener('click', confirmBurn);
+            
+            // Initialize data on load
+            initializeData();
+            
+            // Add some hacker-like terminal effects
+            const terminalLines = document.querySelectorAll('.terminal-line');
+            let delay = 0;
+            
+            terminalLines.forEach(line => {
+                line.style.opacity = 0;
+                setTimeout(() => {
+                    line.style.transition = 'opacity 0.5s';
+                    line.style.opacity = 1;
+                }, delay);
+                delay += 300;
+            });
+            
+            // Add blinking cursor effect to input
+            passwordInput.addEventListener('focus', function() {
+                this.classList.add('blink');
+            });
+            
+            passwordInput.addEventListener('blur', function() {
+                this.classList.remove('blink');
+            });
+            
+            // Handle page visibility change
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    // Page is hidden, user is not active
+                    if (isLoggedIn && users[currentUser]) {
+                        users[currentUser].lastSeen = Date.now() - USER_TIMEOUT - 1000;
+                        saveUsers();
+                    }
+                } else if (isLoggedIn && users[currentUser]) {
+                    // Page is visible again, user is active
+                    users[currentUser].lastSeen = Date.now();
+                    saveUsers();
+                    renderUsersList();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
