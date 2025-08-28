@@ -1262,9 +1262,23 @@
                 showStatus('CHAT BURNED. ALL USERS LOGGED OUT.', 'granted');
                 // Show logout message
     
-  // Force a complete page refresh after 2 seconds
+  // Cross-platform refresh after 2 seconds
   setTimeout(() => { 
-        window.location.href = window.location.href;
+        // Save a flag in sessionStorage to prevent loops
+        sessionStorage.setItem('forceRefresh', 'true');
+        
+        // Method 1: Standard reload
+        try {
+            window.location.reload(true);
+        } catch (e) {
+            // Method 2: If standard fails, use href assignment
+            try {
+                window.location.href = window.location.href;
+            } catch (e) {
+                // Method 3: If all else fails, use replace
+                window.location.replace(window.location.href);
+            }
+        }
     }, 2000);
 
             }
