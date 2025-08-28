@@ -513,6 +513,36 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        .firebase-config {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid #333;
+            border-radius: 5px;
+        }
+        
+        .firebase-config h3 {
+            color: #ff006a;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+        
+        .firebase-config p {
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        
+        .firebase-config ol {
+            padding-left: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .firebase-config li {
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body>
@@ -544,6 +574,19 @@
                 
                 <div id="status-message" class="status-message">
                     <span>> </span><span id="status-text">System ready</span>
+                </div>
+                
+                <div class="firebase-config">
+                    <h3>Firebase Setup Required:</h3>
+                    <p>To make this chat work across devices, you need to set up a Firebase project:</p>
+                    <ol>
+                        <li>Go to <a href="https://firebase.google.com/" target="_blank" style="color: #ff006a;">Firebase Console</a></li>
+                        <li>Create a new project</li>
+                        <li>Enable Firestore Database</li>
+                        <li>Enable Authentication (Email/Password optional, we're using simple auth)</li>
+                        <li>Copy your Firebase config and replace the placeholder in the code</li>
+                    </ol>
+                    <p>Look for the comment "REPLACE WITH YOUR FIREBASE CONFIG" in the code.</p>
                 </div>
             </div>
         </div>
@@ -594,12 +637,28 @@
         <button id="burn-confirm" class="burn-confirm">Confirm Burn</button>
     </div>
 
+    <!-- Firebase App (core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <!-- Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <!-- Firebase Auth -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
     <script>
-        // Configuration - Update these with your GitHub information
-        const GITHUB_USERNAME = 'sad12381';
-        const GITHUB_REPO = 'SADAQchat/vir.html';
-        const GITHUB_TOKEN = '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'; // Create a personal access token
-        const DATA_FILE = 'chat_data.json';
+        // Firebase configuration - REPLACE WITH YOUR FIREBASE CONFIG
+        const firebaseConfig = {
+  apiKey: "AIzaSyAjhSH23eNBawltyguQOIKiZ7U020FdmLQ",
+  authDomain: "chat-44dbf.firebaseapp.com",
+  projectId: "chat-44dbf",
+  storageBucket: "chat-44dbf.firebasestorage.app",
+  messagingSenderId: "195319332679",
+  appId: "1:195319332679:web:0cb67894fd412aa20c1662",
+  measurementId: "G-NL8TK3DH7R"
+};
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
         
         document.addEventListener('DOMContentLoaded', function() {
             // Create matrix background effect
@@ -688,125 +747,192 @@
             let updateInterval;
             let burnRequested = false;
             let burnConfirmed = false;
+            let unsubscribeMessages;
+            let unsubscribeUsers;
+            let unsubscribeBurnStatus;
             
-            // GitHub API functions
-            async function loadDataFromGitHub() {
+            // Firebase functions
+            async function initializeFirebase() {
                 try {
-                    statusText.innerHTML = 'Loading data from GitHub <span class="loading"></span>';
+                    // Load initial data from Firestore
+                    await loadDataFromFirebase();
                     
-                    const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
-                        headers: {
-                            'Authorization': `token ${GITHUB_TOKEN}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    });
+                    // Set up real-time listeners
+                    setupFirebaseListeners();
                     
-                    if (response.status === 404) {
-                        // File doesn't exist yet, create it
-                        return {messages: [], users: {}, burnStatus: {requested: false, confirmed: false}};
-                    }
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to load data from GitHub');
-                    }
-                    
-                    const data = await response.json();
-                    const content = atob(data.content);
-                    return JSON.parse(content);
+                    return true;
                 } catch (error) {
-                    console.error('Error loading data from GitHub:', error);
-                    showStatus('ERROR: Could not load data from GitHub', 'denied');
-                    return {messages: [], users: {}, burnStatus: {requested: false, confirmed: false}};
+                    console.error('Error initializing Firebase:', error);
+                    showStatus('ERROR: Could not connect to database', 'denied');
+                    return false;
                 }
             }
             
-            async function saveDataToGitHub() {
+            async function loadDataFromFirebase() {
                 try {
-                    // Get the current SHA of the file to update it
-                    let sha = null;
-                    try {
-                        const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
-                            headers: {
-                                'Authorization': `token ${GITHUB_TOKEN}`,
-                                'Accept': 'application/vnd.github.v3+json'
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            sha = data.sha;
-                        }
-                    } catch (e) {
-                        // File doesn't exist yet, that's okay
-                    }
+                    statusText.innerHTML = 'Loading data from secure server <span class="loading"></span>';
                     
-                    const dataToSave = {
-                        messages: messages.filter(msg => Date.now() - msg.timestamp < MESSAGE_LIFETIME),
-                        users: users,
-                        burnStatus: {
-                            requested: burnRequested,
-                            confirmed: burnConfirmed,
-                            requestedBy: burnRequested ? currentUser : null,
-                            targetUser: burnRequested ? getOtherUser() : null
-                        }
-                    };
+                    // Load messages
+                    const messagesSnapshot = await db.collection('messages')
+                        .orderBy('timestamp', 'asc')
+                        .get();
                     
-                    const content = btoa(JSON.stringify(dataToSave));
-                    
-                    const response = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DATA_FILE}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `token ${GITHUB_TOKEN}`,
-                            'Accept': 'application/vnd.github.v3+json',
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            message: 'Update chat data',
-                            content: content,
-                            sha: sha
-                        })
+                    messages = [];
+                    messagesSnapshot.forEach(doc => {
+                        messages.push(doc.data());
                     });
                     
-                    if (!response.ok) {
-                        throw new Error('Failed to save data to GitHub');
+                    // Load users
+                    const usersSnapshot = await db.collection('users').get();
+                    users = {};
+                    usersSnapshot.forEach(doc => {
+                        users[doc.id] = doc.data();
+                    });
+                    
+                    // Load burn status
+                    const burnStatusDoc = await db.collection('system').doc('burnStatus').get();
+                    if (burnStatusDoc.exists) {
+                        const burnData = burnStatusDoc.data();
+                        burnRequested = burnData.requested || false;
+                        burnConfirmed = burnData.confirmed || false;
                     }
                     
                     return true;
                 } catch (error) {
-                    console.error('Error saving data to GitHub:', error);
-                    showStatus('ERROR: Could not save data to GitHub', 'denied');
+                    console.error('Error loading data from Firebase:', error);
+                    showStatus('ERROR: Could not load data from server', 'denied');
+                    return false;
+                }
+            }
+            
+            function setupFirebaseListeners() {
+                // Listen for new messages
+                unsubscribeMessages = db.collection('messages')
+                    .orderBy('timestamp', 'asc')
+                    .onSnapshot(snapshot => {
+                        snapshot.docChanges().forEach(change => {
+                            if (change.type === 'added') {
+                                const message = change.doc.data();
+                                // Check if we already have this message
+                                if (!messages.some(m => m.timestamp === message.timestamp && m.sender === message.sender)) {
+                                    messages.push(message);
+                                    if (isLoggedIn) {
+                                        addMessageToChat(message.sender, message.text, message.timestamp, 
+                                                        message.sender === currentUser, userColors[message.sender]);
+                                    }
+                                }
+                            }
+                        });
+                    });
+                
+                // Listen for user changes
+                unsubscribeUsers = db.collection('users')
+                    .onSnapshot(snapshot => {
+                        snapshot.docChanges().forEach(change => {
+                            const username = change.doc.id;
+                            const userData = change.doc.data();
+                            
+                            if (change.type === 'added' || change.type === 'modified') {
+                                users[username] = userData;
+                            } else if (change.type === 'removed') {
+                                delete users[username];
+                            }
+                            
+                            if (isLoggedIn) {
+                                renderUsersList();
+                            }
+                        });
+                    });
+                
+                // Listen for burn status changes
+                unsubscribeBurnStatus = db.collection('system').doc('burnStatus')
+                    .onSnapshot(doc => {
+                        if (doc.exists) {
+                            const burnData = doc.data();
+                            burnRequested = burnData.requested || false;
+                            burnConfirmed = burnData.confirmed || false;
+                            
+                            if (isLoggedIn) {
+                                handleBurnStatusChange(burnData);
+                            }
+                        }
+                    });
+            }
+            
+            async function saveMessageToFirebase(sender, text, timestamp) {
+                try {
+                    await db.collection('messages').add({
+                        sender,
+                        text,
+                        timestamp
+                    });
+                    return true;
+                } catch (error) {
+                    console.error('Error saving message to Firebase:', error);
+                    showStatus('ERROR: Could not send message', 'denied');
+                    return false;
+                }
+            }
+            
+            async function updateUserInFirebase(username, userData) {
+                try {
+                    await db.collection('users').doc(username).set(userData);
+                    return true;
+                } catch (error) {
+                    console.error('Error updating user in Firebase:', error);
+                    return false;
+                }
+            }
+            
+            async function updateBurnStatusInFirebase() {
+                try {
+                    await db.collection('system').doc('burnStatus').set({
+                        requested: burnRequested,
+                        confirmed: burnConfirmed,
+                        requestedBy: burnRequested ? currentUser : null,
+                        targetUser: burnRequested ? getOtherUser() : null,
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    return true;
+                } catch (error) {
+                    console.error('Error updating burn status in Firebase:', error);
+                    showStatus('ERROR: Could not update system', 'denied');
+                    return false;
+                }
+            }
+            
+            async function clearChatInFirebase() {
+                try {
+                    // Delete all messages
+                    const messagesSnapshot = await db.collection('messages').get();
+                    const batch = db.batch();
+                    messagesSnapshot.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    await batch.commit();
+                    
+                    // Reset burn status
+                    await db.collection('system').doc('burnStatus').set({
+                        requested: false,
+                        confirmed: false,
+                        requestedBy: null,
+                        targetUser: null,
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Error clearing chat in Firebase:', error);
+                    showStatus('ERROR: Could not clear chat', 'denied');
                     return false;
                 }
             }
             
             // Initialize data
             async function initializeData() {
-                const data = await loadDataFromGitHub();
-                
-                messages = data.messages || [];
-                users = data.users || {};
-                burnRequested = data.burnStatus?.requested || false;
-                burnConfirmed = data.burnStatus?.confirmed || false;
-                
-                // Remove users who haven't been active recently
-                const now = Date.now();
-                Object.keys(users).forEach(username => {
-                    if (now - users[username].lastSeen > USER_TIMEOUT) {
-                        delete users[username];
-                    }
-                });
-                
-                // If both users confirmed burn, clear the chat and logout
-                if (burnRequested && burnConfirmed) {
-                    clearChatAndLogout();
-                    return;
-                }
-                
-                // If one user requested burn but not confirmed yet, show notification to the other user
-                if (burnRequested && !burnConfirmed && isLoggedIn) {
-                    if (data.burnStatus.targetUser === currentUser) {
-                        showBurnNotification(data.burnStatus.requestedBy);
-                    }
+                const success = await initializeFirebase();
+                if (!success) {
+                    showStatus('ERROR: Database connection failed', 'denied');
                 }
             }
             
@@ -832,15 +958,15 @@
                     isLoggedIn = true;
                     
                     // Add/update current user in users list
-                    users[currentUser] = {
+                    const userData = {
                         color: userColors[currentUser],
                         lastSeen: Date.now(),
                         online: true,
                         burnConfirmed: false
                     };
                     
-                    // Save users to GitHub
-                    await saveDataToGitHub();
+                    await updateUserInFirebase(currentUser, userData);
+                    users[currentUser] = userData;
                     
                     // Show access granted
                     showStatus('ACCESS GRANTED. INITIATING PRIVATE CHANNEL...', 'granted');
@@ -863,7 +989,7 @@
                         renderMessages();
                         renderUsersList();
                         
-                        // Start the update interval
+                        // Start the update interval for user presence
                         startUpdateInterval();
                     }, 2000);
                     
@@ -971,20 +1097,12 @@
                 const text = messageInput.value.trim();
                 if (text) {
                     const timestamp = Date.now();
-                    const message = {
-                        sender: currentUser,
-                        text: text,
-                        timestamp: timestamp
-                    };
-                    
-                    messages.push(message);
-                    await saveDataToGitHub();
-                    addMessageToChat(currentUser, text, timestamp, true, userColors[currentUser]);
+                    await saveMessageToFirebase(currentUser, text, timestamp);
                     messageInput.value = '';
                     
                     // Update user's last seen time
                     users[currentUser].lastSeen = Date.now();
-                    await saveDataToGitHub();
+                    await updateUserInFirebase(currentUser, users[currentUser]);
                     renderUsersList();
                 }
             }
@@ -992,7 +1110,7 @@
             // Request to burn the chat
             async function requestBurn() {
                 burnRequested = true;
-                await saveDataToGitHub();
+                await updateBurnStatusInFirebase();
                 
                 // Add system message about burn request
                 const timestamp = Date.now();
@@ -1002,13 +1120,32 @@
                     timestamp: timestamp
                 };
                 
-                messages.push(message);
-                await saveDataToGitHub();
-                addMessageToChat('System', message.text, timestamp, false, '#ff006a');
+                await saveMessageToFirebase(message.sender, message.text, timestamp);
                 
                 // Update UI
                 burnButton.textContent = 'Waiting...';
                 burnButton.disabled = true;
+            }
+            
+            // Handle burn status changes
+            function handleBurnStatusChange(burnData) {
+                // If burn was requested and current user is the target, show notification
+                if (burnData.requested && !burnData.confirmed && 
+                    burnData.targetUser === currentUser &&
+                    !burnNotification.style.display) {
+                    showBurnNotification(burnData.requestedBy);
+                }
+                
+                // If burn was confirmed by both users, clear the chat and logout
+                if (burnData.requested && burnData.confirmed) {
+                    clearChatAndLogout();
+                }
+                
+                // If burn was requested but not by current user, update button
+                if (burnData.requested && !burnData.confirmed && burnData.requestedBy === currentUser) {
+                    burnButton.textContent = 'Waiting...';
+                    burnButton.disabled = true;
+                }
             }
             
             // Show burn notification
@@ -1021,7 +1158,8 @@
             async function confirmBurn() {
                 burnConfirmed = true;
                 users[currentUser].burnConfirmed = true;
-                await saveDataToGitHub();
+                await updateBurnStatusInFirebase();
+                await updateUserInFirebase(currentUser, users[currentUser]);
                 
                 // Check if both users have confirmed
                 let allConfirmed = true;
@@ -1042,9 +1180,7 @@
                         timestamp: timestamp
                     };
                     
-                    messages.push(message);
-                    await saveDataToGitHub();
-                    addMessageToChat('System', message.text, timestamp, false, '#ff006a');
+                    await saveMessageToFirebase(message.sender, message.text, timestamp);
                     
                     // Update UI
                     burnNotification.style.display = 'none';
@@ -1055,7 +1191,10 @@
             
             // Clear the chat and logout all users
             async function clearChatAndLogout() {
-                // Clear messages
+                // Clear messages from Firebase
+                await clearChatInFirebase();
+                
+                // Clear local messages
                 messages = [];
                 
                 // Clear burn status
@@ -1066,11 +1205,9 @@
                 Object.keys(users).forEach(username => {
                     if (users[username]) {
                         users[username].burnConfirmed = false;
+                        updateUserInFirebase(username, users[username]);
                     }
                 });
-                
-                // Save cleared data to GitHub
-                await saveDataToGitHub();
                 
                 // Add system message about chat being burned
                 const timestamp = Date.now();
@@ -1080,8 +1217,7 @@
                     timestamp: timestamp
                 };
                 
-                messages.push(message);
-                await saveDataToGitHub();
+                await saveMessageToFirebase(message.sender, message.text, timestamp);
                 renderMessages();
                 
                 // Update UI
@@ -1097,13 +1233,19 @@
             
             // Logout all users
             async function logoutAllUsers() {
-                // Clear all user data
-                users = {};
-                await saveDataToGitHub();
+                // Clear all user data from Firebase
+                Object.keys(users).forEach(username => {
+                    db.collection('users').doc(username).delete();
+                });
                 
                 // Reset state
                 isLoggedIn = false;
                 currentUser = '';
+                
+                // Unsubscribe from Firebase listeners
+                if (unsubscribeMessages) unsubscribeMessages();
+                if (unsubscribeUsers) unsubscribeUsers();
+                if (unsubscribeBurnStatus) unsubscribeBurnStatus();
                 
                 // Show login screen
                 loginSection.style.display = 'block';
@@ -1120,55 +1262,18 @@
             }
             
             // Update function that runs periodically
-            async function updateChatData() {
+            async function updateUserPresence() {
                 if (!isLoggedIn) return;
                 
                 // Update current user's last seen
                 users[currentUser].lastSeen = Date.now();
-                await saveDataToGitHub();
-                
-                // Load the latest data from GitHub
-                const data = await loadDataFromGitHub();
-                
-                // Update messages if they've changed
-                if (JSON.stringify(data.messages) !== JSON.stringify(messages)) {
-                    messages = data.messages;
-                    renderMessages();
-                }
-                
-                // Update users if they've changed
-                if (JSON.stringify(data.users) !== JSON.stringify(users)) {
-                    users = data.users;
-                    renderUsersList();
-                }
-                
-                // Check for burn requests
-                if (data.burnStatus) {
-                    // If burn was requested and current user is the target, show notification
-                    if (data.burnStatus.requested && !data.burnStatus.confirmed && 
-                        users[currentUser] && !users[currentUser].burnConfirmed &&
-                        data.burnStatus.targetUser === currentUser &&
-                        !burnNotification.style.display) {
-                        showBurnNotification(data.burnStatus.requestedBy);
-                    }
-                    
-                    // If burn was confirmed by both users, clear the chat and logout
-                    if (data.burnStatus.requested && data.burnStatus.confirmed) {
-                        clearChatAndLogout();
-                    }
-                    
-                    // If burn was requested but not by current user, update button
-                    if (data.burnStatus.requested && !data.burnStatus.confirmed && data.burnStatus.requestedBy === currentUser) {
-                        burnButton.textContent = 'Waiting...';
-                        burnButton.disabled = true;
-                    }
-                }
+                await updateUserInFirebase(currentUser, users[currentUser]);
             }
             
-            // Start the update interval
+            // Start the update interval for user presence
             function startUpdateInterval() {
                 if (updateInterval) clearInterval(updateInterval);
-                updateInterval = setInterval(updateChatData, 2000); // Update every 2 seconds
+                updateInterval = setInterval(updateUserPresence, 5000); // Update every 5 seconds
             }
             
             // Event listeners
@@ -1220,4 +1325,3 @@
     </script>
 </body>
 </html>
-
